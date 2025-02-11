@@ -1,26 +1,28 @@
-int inputPin = A7;
-int outputPin = 2;
-int buttonPin = 3;
+int inputPin = A1;
+int outputPin = 0;
+int buttonPin = 4;
 
-const int numOfAverages = 5;
+const int numOfAverages = 3;
 int averages[numOfAverages];
 
-const int numOfInputs = 10;
+const int numOfInputs = 5;
 int inputs[numOfInputs];
 
 const int steps = 256;
-int levelTable[steps];
 
-int currentBrightness = 0;
-int targetBrightness = 0;
-//float interpolate = 0.05;
+int currentProgress = 0;
+int targetProgress = 0;
 
-int lastButtonReading = 0;
 bool lampIsOn = false;
+
+long lastMillis = 0;
+int interval = 5;
+
+int threshold = 60;
 
 void setup() {
   // put your setup code here, to run once:
-  fillLevelTable();
+  //fillLevelTable();
   for (int i = 0; i < numOfAverages; i++) {
     averages[i] = 0;
   }
@@ -36,28 +38,30 @@ void loop() {
 
   int average = getAverage(reading);
 
-  if (isChanging(average) == true) {
-    targetBrightness = reading / (1024 / steps);
+  if (isChanging(average) == true || reading - currentProgress > threshold) {
+    targetProgress = reading / (1024 / steps);
   }
-  if (currentBrightness != targetBrightness) {
-    if (currentBrightness < targetBrightness) {
-      currentBrightness ++;
-    } else {
-      currentBrightness --;
+  if (currentProgress != targetProgress) {
+    if (millis() - lastMillis > interval) {
+      if (currentProgress < targetProgress) {
+        currentProgress++;
+      } else {
+        currentProgress--;
+      }
+      lastMillis = millis();
     }
-    delay(10);
   }
+
+  int brightnessNow = getBrightness(currentProgress);
 
   int buttonReading = digitalRead(buttonPin);
-  if (buttonReading != lastButtonReading && buttonReading == HIGH) {
-    dim(levelTable[currentBrightness], lampIsOn);
+  if ((buttonReading == HIGH && lampIsOn == false) || (buttonReading == LOW && lampIsOn == true)) {
+    dim(brightnessNow, lampIsOn);
     lampIsOn = !lampIsOn;
   }
-  lastButtonReading = buttonReading;
 
   if (lampIsOn) {
-    int chosenBrightness = levelTable[currentBrightness];
-    analogWrite(outputPin, chosenBrightness);
+    analogWrite(outputPin, brightnessNow);
   } else {
     analogWrite(outputPin, 0);
   }
@@ -103,71 +107,24 @@ int getAverage(int reading) {
   return result;
 }
 
-// sin curve
-// void fillLevelTable() {
-//   // iterate over the array and calculate the right value for it:
-//   for (int l = 0; l < steps; l++) {
-//     // map input to a 0-360 range:
-//     int angle = map(l, 0, steps, 0, 360);
-//     // convert to radians:
-//     float lightLevel = angle * PI / 360;
-//     // now subtract PI/2 to offset by 90 degrees, so yuu can start fade at 0:
-//     lightLevel -= PI / 2;
-//     // get the sine of that:
-//     lightLevel = sin(lightLevel);
-//     // now you have -1 to 1. Add 1 to get 0 to 2:
-//     lightLevel += 1;
-//     // multiply to get 0-255:
-//     lightLevel *= (steps - 1) / 2;
-//     // put it in the array:
-//     levelTable[l] = int(lightLevel);
-//   }
-// }
-
-//Exponentioal
-// void fillLevelTable() {
-
-//   // Calculate the scaling factor based on the
-//   // number of PWM steps you want:
-//   float scalingFactor = (steps * log10(2)) / (log10(steps));
-
-//   // iterate over the array and calculate the right value for it:
-//   for (int l = 0; l < steps; l++) {
-//     int lightLevel = pow(2, (l / scalingFactor)) - 1;
-//     lightLevel = map(lightLevel, 0, steps, 5, steps);
-//     levelTable[l] = lightLevel;
-//   }
-// }
-
-//Xsquare
-void fillLevelTable() {
-  // iterate over the array and calculate the right value for it:
-  for (int l = 0; l <= steps; l++) {
-    // square the current value:
-    float lightLevel = pow(l, 2);
-    // map the result back to the resolution range:
-    lightLevel = map(lightLevel, 0, 65535, 5, steps - 1);
-    levelTable[l] = lightLevel;
-  }
+int getBrightness(int progress) {
+  float lightLevel = pow(progress, 2);
+  lightLevel = map(lightLevel, 0, 65535, 5, steps);
+  return (int)lightLevel;
 }
 
 void dim(int brightness, bool isOn) {
-  int table[steps];
-  for (int l = 0; l <= steps - 1; l++) {
-    float lightLevel = pow(l, 2);
-    lightLevel = map(lightLevel, 0, 65535, 0, brightness);
-    table[l] = lightLevel;
-  }
   int currentSteps = 0;
   while (currentSteps != steps) {
     currentSteps++;
-    int chosenBrightness;
+    float lightLevel;
     if (isOn == true) {
-      chosenBrightness = (int)table[steps - 1 - currentSteps];
+      lightLevel = pow(steps - currentSteps, 2);
     } else if (isOn == false) {
-      chosenBrightness = (int)table[currentSteps];
+      lightLevel = pow(currentSteps, 2);
     }
-    analogWrite(outputPin, chosenBrightness);
+    lightLevel = map(lightLevel, 0, 65535, 0, brightness);
+    analogWrite(outputPin, (int)lightLevel);
     delay(5);
   }
 }
